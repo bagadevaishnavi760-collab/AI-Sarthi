@@ -1,0 +1,4 @@
+Module,Dataset,Task,Method,Evaluation,Status
+Budget Allocation,NHM Budget,Predict Expenditure,"Linear Regression, Random Forest, XGBoost","MAE, RMSE, R²",ML prototype completed
+Health / Disease Analytics,HMIS,Health indicator analysis,EDA + prototype indicator priority score,Descriptive statistics and score analysis,Analytics prototype completed
+Infrastructure,Rural Health Infrastructure,Infrastructure analysis,State/year analytics + prototype gap score,"Coverage, missingness and descriptive analysis",Analytics prototype completed
