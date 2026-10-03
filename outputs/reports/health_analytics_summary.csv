@@ -1,0 +1,18 @@
+Metric,Value,Interpretation
+HMIS rows,101840,Rows in the source snapshot.
+HMIS columns,9,Columns in the source snapshot.
+Exact duplicate rows,1539,Reported only; no rows were removed.
+Unique state labels,37,Exact source labels; no external canonical list applied.
+Unique indicators,25,Distinct Indicator values.
+Observation categories,5,Distinct source category values.
+Types,6,Distinct source Type values.
+Value_Numeric missing rows,44862,Missing values were not converted to zero.
+Value_Numeric missing percent,44.05,Percentage of all HMIS rows.
+Reporting_Period values,Source snapshot (date not inferred),Source snapshot label; no date inferred.
+Reporting_Period parseable date rows,0,No time-series date available when zero.
+Reporting_Period rows containing four-digit year,0,No year inferred from other fields.
+Indicators meeting descriptive coverage rule,25,At least 20 numeric rows across 3 individual state labels.
+Rows with prototype priority score,56978,Min-max normalized within Indicator × Observation_Category among individual states.
+Most-observed state label,Dadra and Nagar Haveli and Daman and Diu,5360 source rows; not population adjusted.
+Most-observed indicator,M19 [Other Items],15200 source rows; frequency is not severity.
+Highest-average prototype-score state,Maharashtra,"Score 0.0859; demonstration only, not official ranking."

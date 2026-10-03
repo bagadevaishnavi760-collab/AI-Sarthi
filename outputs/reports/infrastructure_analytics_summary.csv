@@ -1,0 +1,12 @@
+Metric,Value,Interpretation
+Infrastructure rows,74,Rows in the cleaned state-year source.
+Infrastructure columns,11,Columns in the cleaned source.
+Unique state labels,38,Distinct state labels in the source.
+Reporting years,"2022-23, 2021-22",Only years present in the source are reported.
+Exact duplicate rows,0,Reported only; no rows removed.
+Total missing cells,346,Missing infrastructure values remain missing.
+Overall missing percentage,42.51,Missing cells divided by all source cells.
+Prototype score available rows,74,Rows with at least one observed infrastructure measure.
+Prototype score missing rows,0,Rows with no observed infrastructure measure.
+Forecasting suitability,Not suitable,Only two years and uneven measure coverage.
+Prototype score suitability,Demonstration only,Not an official or clinically validated gap score.
