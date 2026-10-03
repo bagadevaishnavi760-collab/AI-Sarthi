@@ -1,0 +1,123 @@
+@import url('https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700;800&family=JetBrains+Mono:wght@400;500;600&display=swap');
+
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
+html {
+  scroll-behavior: smooth;
+  color-scheme: light;
+}
+
+body {
+  @apply bg-background font-sans text-ink antialiased selection:bg-secondary/15 selection:text-secondaryDark;
+  font-feature-settings: 'cv02', 'cv03', 'cv04', 'cv11';
+}
+
+/* Subtle, sophisticated background grid patterns inspired by precision technical dashboards */
+.bg-grid {
+  background-size: 32px 32px;
+  background-image: 
+    linear-gradient(to right, rgba(15, 39, 69, 0.04) 1px, transparent 1px),
+    linear-gradient(to bottom, rgba(15, 39, 69, 0.04) 1px, transparent 1px);
+}
+
+.bg-grid-dense {
+  background-size: 16px 16px;
+  background-image: 
+    linear-gradient(to right, rgba(15, 39, 69, 0.035) 1px, transparent 1px),
+    linear-gradient(to bottom, rgba(15, 39, 69, 0.035) 1px, transparent 1px);
+}
+
+.bg-dots {
+  background-size: 20px 20px;
+  background-image: radial-gradient(rgba(15, 39, 69, 0.08) 1px, transparent 1px);
+}
+
+/* Subtle glow effects for high-level cards */
+.radial-glow {
+  background: radial-gradient(600px circle at top center, rgba(37, 99, 235, 0.05), transparent 70%);
+}
+
+/* Smooth page entrance animation */
+main > * {
+  animation: pagefade 0.28s cubic-bezier(0.16, 1, 0.3, 1);
+}
+
+@keyframes pagefade {
+  from {
+    opacity: 0;
+    transform: translateY(6px);
+  }
+  to {
+    opacity: 1;
+    transform: translateY(0);
+  }
+}
+
+/* Elegant modal entrance */
+.modal-enter {
+  animation: modal-in 0.2s cubic-bezier(0.16, 1, 0.3, 1);
+}
+
+@keyframes modal-in {
+  from {
+    opacity: 0;
+    transform: scale(0.96) translateY(8px);
+  }
+  to {
+    opacity: 1;
+    transform: scale(1) translateY(0);
+  }
+}
+
+/* Refined press feedback on interactive controls */
+button:active:not(:disabled),
+[role='button']:active {
+  transform: scale(0.985);
+  transition: transform 0.1s ease;
+}
+
+/* Numeric metrics scan cleanly */
+.tabular {
+  font-variant-numeric: tabular-nums;
+  letter-spacing: -0.02em;
+}
+
+/* Sleek custom scrollbars */
+::-webkit-scrollbar {
+  width: 6px;
+  height: 6px;
+}
+
+::-webkit-scrollbar-track {
+  background: transparent;
+}
+
+::-webkit-scrollbar-thumb {
+  background: #CBD5E1;
+  border-radius: 9999px;
+}
+
+::-webkit-scrollbar-thumb:hover {
+  background: #94A3B8;
+}
+
+/* Visible focus accessibility */
+:focus-visible {
+  @apply outline-none ring-2 ring-secondary ring-offset-2 ring-offset-background;
+}
+
+/* Respect users who prefer reduced motion */
+@media (prefers-reduced-motion: reduce) {
+  html {
+    scroll-behavior: auto;
+  }
+  *,
+  *::before,
+  *::after {
+    animation-duration: 0.01ms !important;
+    animation-iteration-count: 1 !important;
+    transition-duration: 0.01ms !important;
+  }
+}
