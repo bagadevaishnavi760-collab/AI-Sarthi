@@ -1,9 +1,16 @@
+
 from contextlib import asynccontextmanager
 import logging
 import platform
 import re
 import sys
 from typing import Any, Literal
+
+from fastapi import FastAPI, Depends, HTTPException, Query
+from fastapi.middleware.cors import CORSMiddleware
+from pydantic import BaseModel, Field
+from sqlalchemy.orm import Session
+
 
 from fastapi import FastAPI, Depends, HTTPException, Query
 from fastapi.middleware.cors import CORSMiddleware
@@ -35,6 +42,18 @@ app = FastAPI(
     description="Healthcare budget prediction and local document intelligence",
     version="1.1.0",
     lifespan=lifespan,
+)
+app.add_middleware(
+    CORSMiddleware,
+    allow_origins=[
+        "http://localhost:5173",
+    "http://127.0.0.1:5173",
+    "http://localhost:5174",
+    "http://127.0.0.1:5174",
+    ],
+    allow_credentials=False,
+    allow_methods=["*"],
+    allow_headers=["*"],
 )
 
 cors_origins = {
@@ -142,6 +161,13 @@ def root():
         "status": "healthy",
         "service": "Health Budget Prediction API",
         "model": "Linear Regression"
+    }
+@app.get("/health")
+def health():
+    return {
+        "status": "healthy",
+        "service": "Health Budget Prediction API",
+        "model": "Linear Regression",
     }
 
 
@@ -252,7 +278,7 @@ def predict(
         "status": "success",
         "prediction_id": prediction_record.id
     }
-  
+
 # ---------------------------------------------------------
 # Prediction History
 # ---------------------------------------------------------

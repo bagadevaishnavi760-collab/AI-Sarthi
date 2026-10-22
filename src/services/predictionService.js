@@ -1,7 +1,5 @@
 import api from './api';
-import { samplePrediction } from '../data/mockData';
 
-// GET /health — reports prediction service availability only.
 export async function getPredictionServiceHealth() {
   try {
     const res = await api.get('/health', { timeout: 5000 });
@@ -11,23 +9,23 @@ export async function getPredictionServiceHealth() {
   }
 }
 
-// POST /predict — the ML backend endpoint is provisional.
-// Falls back to a clearly labelled demo-mode prediction shell when offline.
 export async function predictBudgetUtilization(payload) {
-  try {
-    const res = await api.post('/predict', payload);
-    return { ...res.data, mode: 'api' };
-  } catch {
-    // Demo mode: we deliberately do NOT fake a numeric prediction here.
-    // We return a marked placeholder so the UI can show "demo mode".
-    return {
-      predictedUtilization: samplePrediction.predictedUtilization,
-      risk: samplePrediction.risk,
-      modelName: samplePrediction.modelName,
-      featureImportance: samplePrediction.featureImportance,
-      status: 'success',
-      mode: 'mock-demo',
-      note: 'DEMONSTRATION MODE: sample prediction shown because the ML API is unavailable. No real model inference was performed.',
-    };
-  }
+  // Map the current UI form to the actual FastAPI request schema.
+  const request = {
+    state: payload.state,
+    year_numeric: new Date().getFullYear(),
+    central_release: Number(payload.allocatedBudget),
+    previous_year_expenditure:
+      Number(payload.allocatedBudget) *
+      Number(payload.previousUtilization) / 100,
+    previous_year_central_release: Number(payload.allocatedBudget),
+  };
+
+  const res = await api.post('/predict', request);
+
+  // Preserve the backend's actual response fields.
+  return {
+    ...res.data,
+    mode: 'api',
+  };
 }
