@@ -1,3 +1,8 @@
+from contextlib import asynccontextmanager
+import logging
+import platform
+import sys
+
 from fastapi import FastAPI, Depends, HTTPException, Query
 from fastapi.middleware.cors import CORSMiddleware
 from pydantic import BaseModel, Field, field_validator
@@ -14,10 +19,20 @@ from api.rag_service import ModelUnavailable, RAGError, RAGService
 from api.structured_data import StructuredDataError
 
 
+LOGGER = logging.getLogger("uvicorn.error")
+
+
+@asynccontextmanager
+async def lifespan(_app: FastAPI):
+    LOGGER.info("AI Sarthi API Python runtime: executable=%s version=%s", sys.executable, platform.python_version())
+    yield
+
+
 app = FastAPI(
     title="AI Sarthi API",
     description="Healthcare budget prediction and local document intelligence",
     version="1.1.0",
+    lifespan=lifespan,
 )
 
 cors_origins = {

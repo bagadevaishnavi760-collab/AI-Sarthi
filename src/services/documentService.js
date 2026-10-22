@@ -11,6 +11,6 @@ export async function getIndexedDocuments() {
 }
 
 export async function getRagHealth() {
-  const res = await api.get('/api/rag/health');
+  const res = await api.get('/api/rag/health', { timeout: 190000 });
   return res.data;
 }

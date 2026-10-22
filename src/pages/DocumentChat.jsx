@@ -1,5 +1,5 @@
 import { useEffect, useState } from 'react';
-import { Send, Trash2 } from 'lucide-react';
+import { RefreshCw, Send, Trash2 } from 'lucide-react';
 import PageHeader from '../components/PageHeader';
 import {
   askDocumentQuestion,
@@ -7,6 +7,25 @@ import {
   getRagHealth,
 } from '../services/documentService';
 import { suggestedQuestions } from '../data/mockData';
+
+const COMPONENT_LABELS = {
+  python_dependencies: 'Python dependencies',
+  ollama: 'Ollama',
+  llm_model: 'LLM model',
+  embedding_model: 'Embedding model',
+  faiss_index: 'FAISS index',
+};
+
+const formatNumber = (value) => Number(value).toLocaleString('en-US', {
+  minimumFractionDigits: 2,
+  maximumFractionDigits: 2,
+});
+
+const formatRecords = (records) => JSON.stringify(
+  records,
+  (_key, value) => typeof value === 'number' ? formatNumber(value) : value,
+  2,
+);
 
 export default function DocumentChat() {
   const [messages, setMessages] = useState([]);
@@ -19,6 +38,23 @@ export default function DocumentChat() {
   const [health, setHealth] = useState(null);
   const [healthLoading, setHealthLoading] = useState(true);
   const [healthError, setHealthError] = useState('');
+
+  const refreshStatus = async () => {
+    setHealthLoading(true);
+    setDocumentsLoading(true);
+    setHealthError('');
+    setDocumentsError('');
+    await Promise.all([
+      getIndexedDocuments()
+        .then(setDocuments)
+        .catch((error) => setDocumentsError(error.message))
+        .finally(() => setDocumentsLoading(false)),
+      getRagHealth()
+        .then(setHealth)
+        .catch((error) => setHealthError(error.message))
+        .finally(() => setHealthLoading(false)),
+    ]);
+  };
 
   useEffect(() => {
     getIndexedDocuments()
@@ -64,6 +100,13 @@ export default function DocumentChat() {
     setSessionId(null);
   };
   const ragReady = Boolean(health?.ready);
+  const componentStatuses = health?.components ?? {};
+  const resultLabels = {
+    structured_data: 'Structured dataset result',
+    pdf_rag: 'PDF document result',
+    combined: 'Combined PDF and structured-data result',
+    insufficient_evidence: 'No matching evidence',
+  };
 
   return (
     <div className="space-y-6">
@@ -99,13 +142,44 @@ export default function DocumentChat() {
                   ? `FAISS · ${health.indexed_documents} documents · ${health.indexed_chunks} chunks`
                   : 'No indexed vector store'}
               </span>
+              <button
+                type="button"
+                onClick={refreshStatus}
+                disabled={healthLoading || documentsLoading}
+                className="ml-2 inline-flex items-center gap-1 rounded px-2 py-1 text-[10px] font-semibold text-secondary hover:bg-blue-50 disabled:opacity-50"
+                aria-label="Refresh document intelligence status"
+              >
+                <RefreshCw size={12} className={healthLoading ? 'animate-spin' : ''} />
+                Refresh
+              </button>
             </div>
             {health && (
-              <p className="mt-3 text-[11px] leading-relaxed text-slate-500">
-                Embeddings: {health.embedding_model_available ? 'available' : 'not installed'} ·
-                {' '}Ollama: {health.ollama_connected ? 'connected' : 'unavailable'} ·
-                {' '}LLM: {health.configured_llm_available ? 'available' : 'not installed'}
-              </p>
+              <div className="mt-3 space-y-1 text-[11px] leading-relaxed text-slate-600">
+                {Object.entries(componentStatuses).map(([key, component]) => (
+                  <p key={key}>
+                    <strong>{COMPONENT_LABELS[key] ?? key}:</strong>{' '}
+                    {component.status}
+                    {key === 'llm_model' && component.name ? ` (${component.name})` : ''}
+                    {key === 'llm_model'
+                      ? ` · inference ${component.inference_available ? 'ready' : 'unavailable'}`
+                      : ''}
+                    {key === 'embedding_model' && component.name ? ` (${component.name})` : ''}
+                    {key === 'faiss_index'
+                      ? ` · ${component.document_count} documents, ${component.chunk_count} chunks`
+                      : ''}
+                    {key === 'python_dependencies' && component.missing_modules?.length
+                      ? ` · Missing: ${component.missing_modules.join(', ')}`
+                      : ''}
+                  </p>
+                ))}
+                {!componentStatuses.python_dependencies && (
+                  <p>
+                    Embeddings: {health.embedding_model_available ? 'loaded' : 'unavailable'} ·
+                    {' '}Ollama: {health.ollama_connected ? 'connected' : 'unavailable'} ·
+                    {' '}LLM: {health.configured_llm_available ? 'installed' : 'missing'}
+                  </p>
+                )}
+              </div>
             )}
             {healthLoading && <p className="mt-3 text-xs text-slate-500">Checking local RAG readiness...</p>}
             {health?.indexed_at && (
@@ -114,12 +188,12 @@ export default function DocumentChat() {
               </p>
             )}
             {healthError && <p className="mt-3 text-xs text-rose-700">{healthError}</p>}
-            {!ragReady && health?.details && (
+            {!ragReady && Object.values(componentStatuses).some((component) => component.detail) && (
               <div className="mt-2 space-y-1 text-xs leading-relaxed text-amber-800">
-                {Object.entries(health.details)
-                  .filter(([, detail]) => detail)
-                  .map(([component, detail]) => (
-                    <p key={component}><strong>{component}:</strong> {detail}</p>
+                {Object.entries(componentStatuses)
+                  .filter(([, component]) => component.detail)
+                  .map(([key, component]) => (
+                    <p key={key}><strong>{COMPONENT_LABELS[key] ?? key}:</strong> {component.detail}</p>
                   ))}
               </div>
             )}
@@ -195,7 +269,7 @@ export default function DocumentChat() {
               </div>
               <div>
                 <h3 className="text-sm font-bold text-ink">MoHFW Document Intelligence Session</h3>
-                <p className="text-[11px] text-slate-400">Grounded semantic search with citations</p>
+                <p className="text-[11px] text-slate-400">Answers identify PDF evidence separately from structured dataset results</p>
               </div>
             </div>
             {(messages.length > 0 || sessionId) && (
@@ -247,6 +321,11 @@ export default function DocumentChat() {
               ) : (
                 <div key={`assistant-${index}`} className="flex justify-start">
                   <div className="max-w-[90%] space-y-3 rounded-2xl rounded-tl-xs border border-slate-200/80 bg-slate-50 px-4 py-3.5 shadow-xs">
+                    {message.result_type && (
+                      <span className="inline-flex rounded-full bg-blue-50 px-2 py-0.5 text-[10px] font-semibold text-blue-800">
+                        {resultLabels[message.result_type] ?? message.result_type}
+                      </span>
+                    )}
                     <p className="text-xs leading-relaxed text-slate-800 sm:text-sm">{message.answer}</p>
                     {message.error && (
                       <span className="inline-flex items-center gap-1 rounded bg-rose-50 px-2 py-0.5 text-[10px] font-semibold text-rose-800 ring-1 ring-rose-600/20">
@@ -278,18 +357,29 @@ export default function DocumentChat() {
                         ))}
                         {(message.data_sources || []).map((source, sourceIndex) => (
                           <div key={`${source.filename}-${sourceIndex}`} className="rounded-xl border border-slate-200 bg-white p-3 text-xs">
-                            <p className="font-bold text-primary">{source.dataset}</p>
-                            <p className="mt-1 text-[11px] text-slate-600">
-                              {source.provenance}
-                              {source.states?.length ? ` · ${source.states.join(', ')}` : ''}
-                              {source.years?.length ? ` · ${source.years.join(', ')}` : ''}
+                            <p className="font-bold text-primary">
+                              Structured dataset evidence · {source.dataset}
                             </p>
+                            <p className="mt-1 text-[11px] text-slate-600">
+                              {source.filename}
+                              {source.filters?.state
+                                ? ` · State filter: ${Array.isArray(source.filters.state) ? source.filters.state.join(', ') : source.filters.state}`
+                                : ''}
+                              {source.filters?.financial_year
+                                ? ` · Financial-year filter: ${Array.isArray(source.filters.financial_year) ? source.filters.financial_year.join(', ') : source.filters.financial_year}`
+                                : ''}
+                            </p>
+                            {source.fields?.length > 0 && (
+                              <p className="mt-1 text-[10px] text-slate-500">
+                                Fields: {source.fields.join(', ')}
+                              </p>
+                            )}
                             {source.metrics?.map((metric) => (
                               <p key={metric} className="mt-1 text-[11px] text-slate-500">{metric}</p>
                             ))}
                             {source.calculations?.map((calculation, calculationIndex) => (
                               <p key={`${calculation.metric}-${calculationIndex}`} className="mt-1 text-[11px] text-slate-600">
-                                Calculated {calculation.metric}{calculation.year ? ` (${calculation.year})` : ''}: {calculation.value}
+                                Calculated {calculation.metric}{calculation.year ? ` (${calculation.year})` : ''}: {formatNumber(calculation.value)}
                                 {' '}({calculation.method})
                               </p>
                             ))}
@@ -299,7 +389,7 @@ export default function DocumentChat() {
                                   View {source.records.length} matching data record(s)
                                 </summary>
                                 <pre className="mt-2 max-h-48 overflow-auto whitespace-pre-wrap break-words text-[10px] text-slate-600">
-                                  {JSON.stringify(source.records, null, 2)}
+                                  {formatRecords(source.records)}
                                 </pre>
                               </details>
                             )}

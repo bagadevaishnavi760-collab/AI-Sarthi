@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import math
 import os
 import re
 from functools import lru_cache
@@ -270,6 +271,7 @@ class StructuredDataService:
             filtered = self._filter_rows(key, data, question)
             if filtered.empty:
                 continue
+            filtered = self._validate_state_year_rows(key, filtered, path.name)
             dataset_calculations = self._calculations(key, filtered, question)
             for calculation in dataset_calculations:
                 calculation["source_file"] = path.name
@@ -285,8 +287,10 @@ class StructuredDataService:
             sources.append({
                 "dataset": title,
                 "filename": path.name,
+                "evidence_type": "structured_dataset",
                 "provenance": f"Project CSV: {path.name}",
                 "record_count": len(selected_rows),
+                "fields": [str(column) for column in selected_rows.columns],
                 "metrics": self._metric_definitions(key),
             })
         return {
@@ -295,6 +299,25 @@ class StructuredDataService:
             "calculations": calculations,
             "limitations": limitations,
         }
+
+    @staticmethod
+    def _validate_state_year_rows(key: str, frame: pd.DataFrame, filename: str) -> pd.DataFrame:
+        if key not in {"nhm_budget", "infrastructure"} or frame.empty:
+            return frame
+        duplicates_to_remove = []
+        for _, group in frame.groupby(["State", "Year"], dropna=False, sort=False):
+            if len(group) < 2:
+                continue
+            unique_rows = group.drop_duplicates()
+            if len(unique_rows) > 1:
+                state = group.iloc[0]["State"]
+                year = group.iloc[0]["Year"]
+                raise StructuredDataError(
+                    f"{filename} has conflicting duplicate {state}/{year} rows; "
+                    "aggregation was stopped to avoid double-counting."
+                )
+            duplicates_to_remove.extend(group.index[1:])
+        return frame.drop(index=duplicates_to_remove)
 
     def _filter_rows(self, key: str, frame: pd.DataFrame, question: str) -> pd.DataFrame:
         result = frame.copy()
@@ -405,6 +428,7 @@ class StructuredDataService:
         for period, group in grouped:
             for metric in metrics:
                 values = pd.to_numeric(group[metric], errors="coerce")
+                values = values.where(values.map(lambda value: pd.isna(value) or math.isfinite(float(value))))
                 available = values.notna()
                 if not available.any():
                     continue
@@ -517,14 +541,17 @@ def _numeric(value: Any) -> float | None:
     if value is None or pd.isna(value):
         return None
     try:
-        return float(value)
+        numeric = float(value)
     except (TypeError, ValueError):
         return None
+    return numeric if math.isfinite(numeric) else None
 
 
 def _json_value(value: Any) -> Any:
     if pd.isna(value):
         return None
     if hasattr(value, "item"):
-        return value.item()
+        value = value.item()
+    if isinstance(value, (float, int)) and not isinstance(value, bool) and not math.isfinite(value):
+        return None
     return value

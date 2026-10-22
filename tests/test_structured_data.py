@@ -121,6 +121,21 @@ class StructuredDataServiceTests(unittest.TestCase):
         self.assertIsNone(result["records"][0]["Total_Beds"])
         self.assertEqual(result["calculations"], [])
 
+    def test_non_finite_expenditure_is_excluded_from_results_and_totals(self):
+        rows = [{
+            "State": "Bihar",
+            "Year": "2022-23",
+            "Central_Release": 100,
+            "Expenditure": float("inf"),
+            "Expenditure_to_Release_Pct": None,
+        }]
+        env = self._write_dataset("NHM_BUDGET_CSV", "budget.csv", rows)
+        with env:
+            result = StructuredDataService().query("total NHM expenditure in 2022-23")
+
+        self.assertIsNone(result["records"][0]["Expenditure"])
+        self.assertEqual(result["calculations"], [])
+
     def test_hmis_reporting_period_is_not_treated_as_a_year_column(self):
         rows = [{
             "Indicator": "Immunization coverage",
@@ -144,6 +159,37 @@ class StructuredDataServiceTests(unittest.TestCase):
         env = self._write_dataset("NHM_BUDGET_CSV", "incomplete.csv", [{"State": "Bihar"}])
         with env, self.assertRaisesRegex(StructuredDataError, "missing required columns"):
             StructuredDataService().query("NHM expenditure in Bihar")
+
+    def test_exact_duplicate_state_year_rows_do_not_double_count_and_totals_are_excluded(self):
+        rows = [
+            {"State": "Bihar", "Year": "2022-23", "Central_Release": 100, "Expenditure": 50,
+             "Expenditure_to_Release_Pct": 50},
+            {"State": "Bihar", "Year": "2022-23", "Central_Release": 100, "Expenditure": 50,
+             "Expenditure_to_Release_Pct": 50},
+            {"State": "Kerala", "Year": "2022-23", "Central_Release": 200, "Expenditure": 150,
+             "Expenditure_to_Release_Pct": 75},
+            {"State": "All India/Total", "Year": "2022-23", "Central_Release": 300,
+             "Expenditure": 200, "Expenditure_to_Release_Pct": 66.7},
+        ]
+        env = self._write_dataset("NHM_BUDGET_CSV", "budget.csv", rows)
+        with env:
+            result = StructuredDataService().query("NHM total expenditure in 2022-23")
+
+        self.assertEqual({record["state"] for record in result["records"]}, {"Bihar", "Kerala"})
+        expenditure = next(calc for calc in result["calculations"] if calc["metric"] == "Expenditure")
+        self.assertEqual(expenditure["value"], 200)
+        self.assertEqual(expenditure["records_included"], 2)
+
+    def test_conflicting_duplicate_state_year_rows_stop_aggregation(self):
+        rows = [
+            {"State": "Bihar", "Year": "2022-23", "Central_Release": 100, "Expenditure": 50,
+             "Expenditure_to_Release_Pct": 50},
+            {"State": "Bihar", "Year": "2022-23", "Central_Release": 100, "Expenditure": 55,
+             "Expenditure_to_Release_Pct": 55},
+        ]
+        env = self._write_dataset("NHM_BUDGET_CSV", "budget.csv", rows)
+        with env, self.assertRaisesRegex(StructuredDataError, "conflicting duplicate"):
+            StructuredDataService().query("NHM total expenditure in 2022-23")
 
     def test_recommendation_matches_state_and_year_and_reports_unspecified_units(self):
         budget_env = self._write_dataset(

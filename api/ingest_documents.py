@@ -19,6 +19,7 @@ def main() -> int:
     except RAGError as exc:
         print(f"Ingestion failed: {exc}", file=sys.stderr)
         return 1
+    print(f"Python interpreter: {sys.executable}")
     print(result["message"])
     print(f"Documents: {result['documents']}; chunks: {result['chunks']}; status: {result['status']}")
     return 0

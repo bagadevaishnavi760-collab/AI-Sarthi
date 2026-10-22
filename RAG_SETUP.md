@@ -1,9 +1,10 @@
 # Document Intelligence (local RAG) setup
 
 The RAG API runs locally. It does not use a paid or hosted LLM or embedding API.
-Python 3.11 is the recommended runtime; Python 3.12 may also work. The current
-repository environment was Python 3.14, for which the FAISS and PyTorch dependency
-set is not certified here.
+Use the repository `.venv` interpreter for the API, health checks, model setup, and
+ingestion so the server checks the same installed packages. The current environment
+uses Python 3.14; FAISS/PyTorch compatibility can vary by platform and must be
+verified by importing the packages and loading/encoding with the actual local model.
 
 ## Install and configure
 
@@ -11,12 +12,12 @@ From the repository root, create and activate a Python 3.11 virtual environment,
 then install the backend requirements:
 
 ```powershell
-py -3.11 -m venv .venv
-.\.venv\Scripts\Activate.ps1
-python -m pip install --upgrade pip
-python -m pip install -r requirements.txt
-Copy-Item .env.example .env
+& .\.venv\Scripts\python.exe -m pip install -r requirements.txt
 ```
+
+If you need to create the environment first, use an installed Python version
+supported by your dependency set. Do not overwrite an existing `.env`; copy
+`.env.example` only when `.env` does not already exist.
 
 Install Ollama for Windows and keep it running. In a new terminal, download the
 configured local generation model:
@@ -29,16 +30,23 @@ If Ollama is not already running as a Windows service/application, start it with
 `ollama serve`.
 
 The default embedding model is
-`sentence-transformers/all-MiniLM-L6-v2`. Download/cache it once with:
+`sentence-transformers/all-MiniLM-L6-v2`. Check and encode the local cached model:
 
 ```powershell
-python -c "from sentence_transformers import SentenceTransformer; SentenceTransformer('sentence-transformers/all-MiniLM-L6-v2')"
+& .\.venv\Scripts\python.exe -m api.setup_embedding_model
 ```
 
-No claim is made that either model is installed until `/api/rag/health` confirms it.
-The embedding service runs in local-files-only mode after this cache step. The
-default Ollama model can be overridden with `OLLAMA_MODEL`; do not set it to an
-uninstalled model. If you choose another embedding model, rebuild the index.
+If the model is not cached, explicitly permit setup to download it:
+
+```powershell
+& .\.venv\Scripts\python.exe -m api.setup_embedding_model --download
+```
+
+`RAG_MODEL_CACHE_DIR` optionally selects the model cache directory. Health checks
+load the model in local-only mode and run an embedding probe; imports or a configured
+model name alone do not establish readiness. The default Ollama model can be
+overridden with `OLLAMA_MODEL`; do not set it to an uninstalled model. If you
+choose another embedding model, rebuild the index.
 
 ## Documents and indexing
 
@@ -51,18 +59,22 @@ their visual layout may not be preserved.
 Index the documents:
 
 ```powershell
-python -m api.ingest_documents
+& .\.venv\Scripts\python.exe -m api.ingest_documents
 ```
 
 The command skips unchanged document sets using path identifiers and content hashes.
 After adding, modifying, or removing documents, run it again. To force a rebuild:
 
 ```powershell
-python -m api.ingest_documents --rebuild
+& .\.venv\Scripts\python.exe -m api.ingest_documents --rebuild
 ```
 
 Changing the embedding model or chunk size/overlap also requires the explicit rebuild
-command above.
+command above:
+
+```powershell
+& .\.venv\Scripts\python.exe -m api.ingest_documents --rebuild
+```
 
 The index uses `data/rag/faiss_index` by default. A new generation is fully written
 before the active pointer is atomically replaced; failed ingestion leaves the previous
@@ -92,7 +104,7 @@ floating-point values by pandas. Missing infrastructure/HMIS values are not zero
 Start the backend from the repository root:
 
 ```powershell
-python -m uvicorn api.app:app --reload --host 127.0.0.1 --port 8000
+& .\.venv\Scripts\python.exe -m uvicorn api.app:app --host 127.0.0.1 --port 8000
 ```
 
 In another terminal, install frontend packages if necessary and start Vite:
@@ -125,8 +137,10 @@ documents; mocked unit tests are not proof of a live model pipeline.
 
 ## Troubleshooting
 
-- **No index / no documents:** add supported files to `data/rag/documents`, run the
-  ingestion command, then refresh the page.
+- **No index / no documents:** place approved MoHFW circulars, NHM guidelines, or
+  healthcare expenditure PDFs in `data/rag/documents`, run the ingestion command
+  with the `.venv` interpreter, then refresh the page. An empty index is never
+  created to indicate success.
 - **Ollama unavailable:** start the Ollama application/service, check
   `OLLAMA_BASE_URL`, and verify `ollama list`.
 - **Configured model unavailable:** run `ollama pull llama3.2` or pull the exact
@@ -137,11 +151,13 @@ documents; mocked unit tests are not proof of a live model pipeline.
   configure only the HTTPS proxy approved for your environment; do not disable
   TLS verification or change firewall settings. The application does not
   download models automatically.
-- **Embedding model unavailable:** run the Sentence Transformers cache command above
-  and check `EMBEDDING_MODEL`; inference never falls back to a remote provider.
+- **Embedding model unavailable:** run the setup command above. Use `--download`
+  only when you intend to fetch model files and network access is available. Check
+  `EMBEDDING_MODEL` and optional `RAG_MODEL_CACHE_DIR`; chat and health checks do
+  not download model files.
 - **Corrupted/incompatible index:** the active index is preserved and health reports
   the condition. Check model configuration and source documents, then explicitly run
   `python -m api.ingest_documents --rebuild`.
-- **Dependency/platform issue:** use Python 3.11 and install from the repository
-  root; the default environment's Python 3.14 was not used to install the full ML
-  dependency stack during this implementation.
+- **Dependency/platform issue:** confirm the API startup interpreter in its log and
+  run `& .\.venv\Scripts\python.exe -m pip check`. The health endpoint imports
+  dependencies in the serving process and reports its executable and Python version.

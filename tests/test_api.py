@@ -1,3 +1,5 @@
+import platform
+import sys
 import unittest
 from unittest.mock import patch
 
@@ -12,17 +14,34 @@ class DocumentIntelligenceAPITests(unittest.TestCase):
     def setUp(self):
         self.client = TestClient(app)
 
+    def test_startup_logs_active_python_runtime(self):
+        with self.assertLogs("uvicorn.error", level="INFO") as logs:
+            with TestClient(app):
+                pass
+
+        message = "\n".join(logs.output)
+        self.assertIn(sys.executable, message)
+        self.assertIn(platform.python_version(), message)
+
     def test_api_and_rag_health_are_distinct(self):
         self.assertEqual(self.client.get("/health").json()["status"], "healthy")
         with patch("api.app.RAGService.health", return_value={
             "api_available": True,
             "ready": False,
             "index_available": False,
+            "components": {
+                "python_dependencies": {"status": "ready", "missing_modules": []},
+                "embedding_model": {"status": "loaded"},
+                "faiss_index": {"status": "missing", "document_count": 0, "chunk_count": 0},
+            },
         }):
             result = self.client.get("/api/rag/health").json()
         self.assertTrue(result["api_available"])
         self.assertFalse(result["ready"])
         self.assertFalse(result["index_available"])
+        self.assertEqual(result["components"]["python_dependencies"]["status"], "ready")
+        self.assertEqual(result["components"]["embedding_model"]["status"], "loaded")
+        self.assertEqual(result["components"]["faiss_index"]["status"], "missing")
 
     def test_documents_endpoint_reports_actual_empty_index(self):
         with patch("api.app.RAGService.documents", return_value=[]):
