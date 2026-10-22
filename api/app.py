@@ -1,7 +1,9 @@
 from contextlib import asynccontextmanager
 import logging
 import platform
+import re
 import sys
+from typing import Any, Literal
 
 from fastapi import FastAPI, Depends, HTTPException, Query
 from fastapi.middleware.cors import CORSMiddleware
@@ -79,22 +81,55 @@ class ChatRequest(BaseModel):
 
 class RecommendationRequest(BaseModel):
     state: str = Field(min_length=1, max_length=100)
-    year: str = Field(pattern=r"^(?:19|20)\d{2}-(?:19|20)?\d{2}$")
+    year: str = Field(min_length=1, max_length=32)
     priority: str
 
-    @field_validator("state", "year", "priority")
+    @field_validator("state")
     @classmethod
-    def strip_selection(cls, value: str) -> str:
-        return value.strip()
+    def normalize_state(cls, value: str) -> str:
+        cleaned = value.strip()
+        if not cleaned:
+            raise ValueError("State must not be blank.")
+        return cleaned
+
+    @field_validator("year")
+    @classmethod
+    def normalize_year(cls, value: str) -> str:
+        match = re.fullmatch(r"((?:19|20)\d{2})\s*[-/]\s*((?:19|20)?\d{2})", value.strip())
+        if not match:
+            raise ValueError("Year must be a financial year such as 2022-23.")
+        start, end = match.groups()
+        expected_end = str(int(start) + 1)
+        if end not in {expected_end, expected_end[-2:]}:
+            raise ValueError("Financial year must span consecutive years.")
+        return f"{start}-{expected_end[-2:]}"
 
     @field_validator("priority")
     @classmethod
-    def validate_priority(cls, value: str) -> str:
-        if value not in PRIORITIES:
+    def normalize_priority(cls, value: str) -> str:
+        cleaned = value.strip()
+        canonical = next((priority for priority in PRIORITIES if priority.casefold() == cleaned.casefold()), None)
+        if canonical is None:
             raise ValueError(f"Priority must be one of: {', '.join(PRIORITIES)}.")
-        return value
+        return canonical
 
     model_config = {"extra": "forbid"}
+
+
+class RecommendationResponse(BaseModel):
+    priorityClassification: str
+    selectedState: str
+    financialYear: str
+    executiveSummary: str
+    recommendedActions: list[str] = Field(min_length=3, max_length=5)
+    suggestedAllocationFocus: list[dict[str, Any]]
+    supportingReasoning: str
+    facts: list[dict[str, Any]]
+    calculations: list[dict[str, Any]]
+    dataSources: list[dict[str, Any]]
+    assumptionsAndLimitations: list[str]
+    mode: Literal["local-ollama"]
+    status: Literal["generated"]
 
 
 # ---------------------------------------------------------
@@ -151,17 +186,22 @@ def recommendation_options():
         raise HTTPException(status_code=503, detail=str(exc)) from exc
 
 
-@app.post("/api/recommend")
+@app.post("/api/recommend", response_model=RecommendationResponse)
 def recommend(request: RecommendationRequest):
     service = RecommendationService()
     try:
         options = service.options()
-        if request.state not in options["state_years"] or request.year not in options["state_years"][request.state]:
+        canonical_state = next(
+            (state for state in options["states"] if state.casefold() == request.state.casefold()),
+            None,
+        )
+        supported_years = options["state_years"].get(canonical_state, []) if canonical_state else []
+        if canonical_state is None or request.year not in supported_years:
             raise HTTPException(
                 status_code=422,
                 detail=f"No matching budget and infrastructure data is available for {request.state} in {request.year}.",
             )
-        return service.generate(request.state, request.year, request.priority)
+        return service.generate(canonical_state, request.year, request.priority)
     except OllamaError as exc:
         raise HTTPException(status_code=503, detail=str(exc)) from exc
     except StructuredDataError as exc:

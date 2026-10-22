@@ -272,7 +272,48 @@ class StructuredDataServiceTests(unittest.TestCase):
         rows[0]["Expenditure"] = None
         _read_csv.cache_clear()
         budget_env = self._write_dataset("NHM_BUDGET_CSV", "budget.csv", rows)
-        with budget_env, infrastructure_env, self.assertRaisesRegex(StructuredDataError, "is missing"):
+        with budget_env, infrastructure_env:
+            evidence = StructuredDataService().recommendation_evidence("Bihar", "2022-23")
+        self.assertFalse(any(fact["metric"] == "Expenditure" for fact in evidence["facts"]))
+        self.assertTrue(any(fact["metric"] == "PHCs" for fact in evidence["facts"]))
+
+    def test_recommendation_excludes_non_finite_values_and_rejects_conflicting_duplicates(self):
+        budget_env = self._write_dataset(
+            "NHM_BUDGET_CSV",
+            "budget.csv",
+            [
+                {"State": "Bihar", "Year": "2022-23", "Central_Release": 100,
+                 "Expenditure": float("inf"), "Expenditure_to_Release_Pct": None},
+                {"State": "Bihar", "Year": "2022-23", "Central_Release": 100,
+                 "Expenditure": float("inf"), "Expenditure_to_Release_Pct": None},
+            ],
+        )
+        infrastructure_env = self._write_dataset(
+            "INFRASTRUCTURE_CSV",
+            "infrastructure.csv",
+            [{"State": "Bihar", "Year": "2022-23", "SHCs": 10, "PHCs": 20, "District_Hospitals": 3,
+              "PHC_Beds": None, "CHC_Beds": None, "SDH_Beds": None, "District_Hospital_Beds": None,
+              "Medical_College_Beds": None, "Total_Beds": None}],
+        )
+        with budget_env, infrastructure_env:
+            evidence = StructuredDataService().recommendation_evidence("Bihar", "2022-23")
+
+        self.assertFalse(any(fact["metric"] == "Expenditure" for fact in evidence["facts"]))
+        self.assertFalse(any(fact["unit"] == "%" for fact in evidence["facts"]))
+
+        conflicting_budget_env = self._write_dataset(
+            "NHM_BUDGET_CSV",
+            "conflicting-budget.csv",
+            [
+                {"State": "Bihar", "Year": "2022-23", "Central_Release": 100, "Expenditure": 50,
+                 "Expenditure_to_Release_Pct": 50},
+                {"State": "Bihar", "Year": "2022-23", "Central_Release": 100, "Expenditure": 55,
+                 "Expenditure_to_Release_Pct": 55},
+            ],
+        )
+        with conflicting_budget_env, infrastructure_env, self.assertRaisesRegex(
+            StructuredDataError, "conflicting duplicate"
+        ):
             StructuredDataService().recommendation_evidence("Bihar", "2022-23")
 
 

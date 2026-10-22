@@ -92,15 +92,88 @@ class DocumentIntelligenceAPITests(unittest.TestCase):
             "states": ["Bihar"],
             "state_years": {"Bihar": ["2022-23"]},
             "sources": [],
+        }):
+            self.assertEqual(self.client.post("/api/recommend", json={
+                **request, "state": "Unsupported",
+            }).status_code, 422)
+            self.assertEqual(self.client.post("/api/recommend", json={
+                **request, "year": "2022-25",
+            }).status_code, 422)
+
+        with patch("api.app.RecommendationService.options", return_value={
+            "states": ["Bihar"],
+            "state_years": {"Bihar": ["2022-23"]},
+            "sources": [],
         }), patch("api.app.RecommendationService.generate", return_value={
+            "priorityClassification": "Infrastructure",
+            "selectedState": "Bihar",
+            "financialYear": "2022-23",
+            "executiveSummary": "Review verified capacity records.",
+            "recommendedActions": ["Review capacity.", "Validate records.", "Collect missing data."],
+            "suggestedAllocationFocus": [],
+            "supportingReasoning": "Evidence is limited.",
             "mode": "local-ollama",
             "facts": [{"metric": "PHCs", "value": 20}],
+            "calculations": [],
+            "dataSources": [{"filename": "infrastructure.csv"}],
+            "assumptionsAndLimitations": ["Missing values remain missing."],
+            "status": "generated",
         }) as generate:
             response = self.client.post("/api/recommend", json=request)
 
         self.assertEqual(response.status_code, 200)
+        self.assertEqual(response.json()["status"], "generated")
         self.assertEqual(response.json()["facts"][0]["value"], 20)
         generate.assert_called_once_with("Bihar", "2022-23", "Infrastructure")
+
+    def test_recommendation_normalizes_state_year_and_priority(self):
+        with patch("api.app.RecommendationService.options", return_value={
+            "states": ["Bihar"],
+            "state_years": {"Bihar": ["2022-23"]},
+            "sources": [],
+        }), patch("api.app.RecommendationService.generate", return_value={
+            "priorityClassification": "Primary Healthcare",
+            "selectedState": "Bihar",
+            "financialYear": "2022-23",
+            "executiveSummary": "Review verified records.",
+            "recommendedActions": ["Review capacity.", "Validate records.", "Collect missing data."],
+            "suggestedAllocationFocus": [],
+            "supportingReasoning": "Evidence is limited.",
+            "facts": [],
+            "calculations": [],
+            "dataSources": [],
+            "assumptionsAndLimitations": [],
+            "mode": "local-ollama",
+            "status": "generated",
+        }) as generate:
+            response = self.client.post("/api/recommend", json={
+                "state": " bihar ",
+                "year": "2022/2023",
+                "priority": "primary healthcare",
+            })
+
+        self.assertEqual(response.status_code, 200)
+        generate.assert_called_once_with("Bihar", "2022-23", "Primary Healthcare")
+
+    def test_invalid_model_output_returns_error_without_fake_recommendation(self):
+        with patch("api.app.RecommendationService.options", return_value={
+            "states": ["Bihar"],
+            "state_years": {"Bihar": ["2022-23"]},
+            "sources": [],
+        }), patch(
+            "api.app.RecommendationService.generate",
+            side_effect=ValueError("The local model could not produce a valid response after one retry."),
+        ):
+            response = self.client.post("/api/recommend", json={
+                "state": "Bihar", "year": "2022-23", "priority": "Primary Healthcare",
+            })
+
+        self.assertEqual(response.status_code, 502)
+        self.assertEqual(
+            response.json()["detail"],
+            "The local model could not produce a valid response after one retry.",
+        )
+        self.assertNotIn("recommendedActions", response.json())
 
     def test_recommendation_rejects_unavailable_pair_and_reports_ollama_failure(self):
         with patch("api.app.RecommendationService.options", return_value={

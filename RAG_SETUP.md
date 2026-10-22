@@ -119,6 +119,25 @@ Configure `VITE_API_BASE_URL` in `.env` if the backend is not at
 `DATABASE_URL` is optional for Document Intelligence; the existing prediction
 routes require it and return 503 when it is absent or unavailable.
 
+## Verify a live recommendation
+
+With the API, Ollama, and the configured model running, use the project interpreter
+to submit the default Haryana recommendation and verify its returned facts and
+calculations against the selected CSV records:
+
+```powershell
+& .\.venv\Scripts\python.exe -m api.smoke_test_recommendation
+```
+
+Choose a different supported selection explicitly when needed:
+
+```powershell
+& .\.venv\Scripts\python.exe -m api.smoke_test_recommendation --state Bihar --year 2022-23 --priority Infrastructure
+```
+
+The smoke test fails with the API error if the model is unavailable or output is
+invalid; it does not substitute a demo recommendation.
+
 ## API and verification
 
 - `GET /health`: API process health, not a RAG readiness assertion.

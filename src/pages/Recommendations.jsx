@@ -38,6 +38,11 @@ export default function Recommendations() {
 
   const availableYears = options.state_years[state] ?? [];
 
+  const clearPreviousRecommendation = () => {
+    setResult(null);
+    setRecommendationError('');
+  };
+
   const run = async () => {
     if (!state || !year || loading) return;
     setLoading(true);
@@ -64,7 +69,7 @@ export default function Recommendations() {
     <div className="space-y-6">
       <PageHeader
         title="AI Budget Recommendations"
-        description="Local decision-support guidance generated from matching NHM budget and healthcare infrastructure records."
+        description="Local decision-support guidance generated from matching NHM budget and healthcare infrastructure records. Other portal pages may still use demonstration data."
         breadcrumb="AI & Intelligence / Recommendations"
       />
 
@@ -84,14 +89,31 @@ export default function Recommendations() {
           <StateSelector
             value={state}
             onChange={(nextState) => {
+              clearPreviousRecommendation();
               setState(nextState);
               const years = options.state_years[nextState] ?? [];
               setYear(years[years.length - 1] ?? '');
             }}
             options={options.states}
           />
-          <Select label="Financial Year" value={year} onChange={setYear} options={availableYears} />
-          <Select label="Healthcare Priority" value={priority} onChange={setPriority} options={PRIORITIES} />
+          <Select
+            label="Financial Year"
+            value={year}
+            onChange={(nextYear) => {
+              clearPreviousRecommendation();
+              setYear(nextYear);
+            }}
+            options={availableYears}
+          />
+          <Select
+            label="Healthcare Priority"
+            value={priority}
+            onChange={(nextPriority) => {
+              clearPreviousRecommendation();
+              setPriority(nextPriority);
+            }}
+            options={PRIORITIES}
+          />
           <div className="flex flex-col justify-center rounded-xl bg-slate-50 p-3 border border-slate-100 text-xs">
             <span className="text-slate-400 font-semibold uppercase text-[10px]">Evidence Coverage</span>
             <span className="mt-1 text-slate-600">
@@ -142,7 +164,7 @@ export default function Recommendations() {
                 </span>
               </div>
               <p className="text-xs text-slate-500 mt-1">
-                Target: {state} · Financial Year: {year} · Focus Domain: {priority}
+                Target: {result.selectedState} · Financial Year: {result.financialYear} · Focus Domain: {result.priorityClassification}
               </p>
             </div>
 

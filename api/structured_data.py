@@ -159,40 +159,38 @@ class StructuredDataService:
         infrastructure_row = selected_infrastructure.iloc[0]
         release = _numeric(budget_row.get("Central_Release"))
         expenditure = _numeric(budget_row.get("Expenditure"))
-        if release is None or expenditure is None:
-            raise StructuredDataError(
-                f"Budget release or expenditure is missing for {state} in {year}; no recommendation can be grounded."
-            )
-        facts = [
-            {
+        facts = []
+        if release is not None:
+            facts.append({
                 "metric": "Central release",
                 "value": release,
                 "unit": "source units (not specified)",
                 "source_file": budget_path.name,
-            },
-            {
+            })
+        if expenditure is not None:
+            facts.append({
                 "metric": "Expenditure",
                 "value": expenditure,
                 "unit": "source units (not specified)",
                 "source_file": budget_path.name,
-            },
-        ]
+            })
         calculations = []
-        if release != 0:
+        if release is not None and expenditure is not None and release != 0:
             percentage = expenditure / release * 100
-            facts.append({
-                "metric": "Expenditure as a share of central release",
-                "value": percentage,
-                "unit": "%",
-                "source_file": budget_path.name,
-            })
-            calculations.append({
-                "metric": "Expenditure-to-release percentage",
-                "value": percentage,
-                "formula": "Expenditure ÷ Central_Release × 100",
-                "source_file": budget_path.name,
-                "limitation": "This percentage is not expenditure as a share of the total sanctioned budget.",
-            })
+            if math.isfinite(percentage):
+                facts.append({
+                    "metric": "Expenditure as a share of central release",
+                    "value": percentage,
+                    "unit": "%",
+                    "source_file": budget_path.name,
+                })
+                calculations.append({
+                    "metric": "Expenditure-to-release percentage",
+                    "value": percentage,
+                    "formula": "Expenditure ÷ Central_Release × 100",
+                    "source_file": budget_path.name,
+                    "limitation": "This percentage is not expenditure as a share of the total sanctioned budget.",
+                })
         infrastructure_metrics = [
             metric for metric in ORDERED_METRICS["infrastructure"]
             if metric not in {"State", "Year"}
@@ -206,10 +204,18 @@ class StructuredDataService:
                     "unit": "count",
                     "source_file": infrastructure_path.name,
                 })
+        if not facts:
+            raise StructuredDataError(
+                f"No valid numeric budget or infrastructure evidence is available for {state} in {year}."
+            )
         limitations = [
             "Budget and infrastructure observations are matched to the same state and financial year.",
             "Blank infrastructure values are omitted as missing observations, not treated as zero.",
+            "Missing or non-finite budget values are omitted; the expenditure-to-release calculation is not shown unless both inputs and a non-zero release are available.",
             "The datasets describe NHM financial progress and reported infrastructure; they do not establish causal effects or prescribe an official allocation.",
+            "NHM financial records are not disaggregated by the selected healthcare priority and must not be described as priority-specific expenditure.",
+            "NHM expenditure is not total public healthcare expenditure.",
+            "The datasets do not report staffing, service utilization, patient outcomes, population need, or comparison benchmarks.",
             "Proposed actions are local-model-generated decision support and require verification by authorized officials.",
         ]
         return {
@@ -224,8 +230,7 @@ class StructuredDataService:
             "limitations": limitations,
         }
 
-    @staticmethod
-    def _recommendation_dataset(key: str) -> tuple[pd.DataFrame, Path]:
+    def _recommendation_dataset(self, key: str) -> tuple[pd.DataFrame, Path]:
         _, env_name, filenames, required = DATASETS[key]
         path = _configured_path(env_name, filenames)
         if path is None:
@@ -240,7 +245,7 @@ class StructuredDataService:
             )
         if "Year" not in data.columns or "State" not in data.columns:
             raise StructuredDataError(f"{path.name} must contain State and Year columns.")
-        return data, path
+        return self._validate_state_year_rows(key, data, path.name), path
 
     def query(self, question: str) -> dict[str, Any]:
         lowered = question.casefold()
