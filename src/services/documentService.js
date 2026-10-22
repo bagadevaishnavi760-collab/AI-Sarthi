@@ -1,17 +1,16 @@
 import api from './api';
-import { sampleChatResponses, fallbackChatResponse } from '../data/mockData';
 
-// POST /api/chat — RAG document intelligence endpoint (provisional).
-export async function askDocumentQuestion(question) {
-  try {
-    const res = await api.post('/api/chat', { question });
-    return { answer: res.data.answer, sources: res.data.sources || [], mode: 'api' };
-  } catch {
-    const q = question.toLowerCase();
-    const match = sampleChatResponses.find((r) =>
-      r.keywords.some((k) => q.includes(k)),
-    );
-    const hit = match || fallbackChatResponse;
-    return { answer: hit.answer, sources: hit.sources, mode: 'mock-demo' };
-  }
+export async function askDocumentQuestion(question, sessionId) {
+  const res = await api.post('/api/chat', { question, session_id: sessionId }, { timeout: 180000 });
+  return res.data;
+}
+
+export async function getIndexedDocuments() {
+  const res = await api.get('/api/documents');
+  return res.data.documents;
+}
+
+export async function getRagHealth() {
+  const res = await api.get('/api/rag/health');
+  return res.data;
 }

@@ -18,9 +18,9 @@ npm run dev
   AI Recommendations, Document Intelligence, Reports, Settings).
 - `src/components/` — reusable components (Sidebar, Navbar, StatCard, ChartCard, DataTable,
   StateSelector, LoadingSpinner, PlotlyChart).
-- `src/services/` — API layer. Each service tries the real FastAPI backend first and falls
-  back to clearly-labelled mock demonstration data when the backend is unavailable. UI
-  components never read mock data directly — they go through services.
+- `src/services/` — API layer. Prototype services may use labelled demonstration data;
+  Document Intelligence uses only live backend responses and never falls back to mock
+  answers or citations when the RAG API is unavailable.
 - `src/data/mockData.js` — consistent demonstration dataset. NOT verified government statistics.
 - `src/context/AppContext.jsx` — global UI state (sidebar, demo-mode flag).
 - `src/hooks/useAsync.js` — shared loading/error/data hook.
@@ -35,3 +35,4 @@ npm run dev
 - ML predictions and AI recommendations are **never faked** inside components; demo mode is
   explicit and clearly labelled.
 - Figures shown are demonstration data and must be replaced by verified backend responses.
+- See [RAG_SETUP.md](./RAG_SETUP.md) for local document ingestion, Ollama, and API setup.

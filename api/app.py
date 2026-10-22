@@ -1,22 +1,41 @@
 from fastapi import FastAPI, Depends, HTTPException, Query
-from pydantic import BaseModel, Field
+from fastapi.middleware.cors import CORSMiddleware
+from pydantic import BaseModel, Field, field_validator
 from sqlalchemy.orm import Session
+import os
+import uuid
 
-from src.database import Base, engine, get_db
+from src.database import get_db
 from src.models import Prediction
 from src.prediction import predict_budget
-
-
-# Create database tables if they don't already exist
-Base.metadata.create_all(bind=engine)
+from api.ollama_client import OllamaError
+from api.recommendation_service import PRIORITIES, RecommendationService
+from api.rag_service import ModelUnavailable, RAGError, RAGService
+from api.structured_data import StructuredDataError
 
 
 app = FastAPI(
-    title="Health Budget Prediction API",
-    description="API for healthcare expenditure prediction",
-    version="1.0.0"
+    title="AI Sarthi API",
+    description="Healthcare budget prediction and local document intelligence",
+    version="1.1.0",
 )
 
+cors_origins = {
+    origin.strip()
+    for origin in os.getenv(
+        "CORS_ORIGINS",
+        "http://localhost:5173,http://127.0.0.1:5173",
+    ).split(",")
+    if origin.strip()
+}
+cors_origins.discard("*")
+app.add_middleware(
+    CORSMiddleware,
+    allow_origins=sorted(cors_origins),
+    allow_credentials=True,
+    allow_methods=["GET", "POST"],
+    allow_headers=["Content-Type", "Authorization"],
+)
 
 # ---------------------------------------------------------
 # Request schema
@@ -30,6 +49,39 @@ class PredictionRequest(BaseModel):
     previous_year_central_release: float = Field(ge=0)
 
 
+class ChatRequest(BaseModel):
+    question: str = Field(min_length=1, max_length=2000)
+    session_id: str | None = Field(default=None, max_length=128)
+
+    @field_validator("question")
+    @classmethod
+    def question_must_not_be_blank(cls, value: str) -> str:
+        value = value.strip()
+        if not value:
+            raise ValueError("Question must not be empty.")
+        return value
+
+
+class RecommendationRequest(BaseModel):
+    state: str = Field(min_length=1, max_length=100)
+    year: str = Field(pattern=r"^(?:19|20)\d{2}-(?:19|20)?\d{2}$")
+    priority: str
+
+    @field_validator("state", "year", "priority")
+    @classmethod
+    def strip_selection(cls, value: str) -> str:
+        return value.strip()
+
+    @field_validator("priority")
+    @classmethod
+    def validate_priority(cls, value: str) -> str:
+        if value not in PRIORITIES:
+            raise ValueError(f"Priority must be one of: {', '.join(PRIORITIES)}.")
+        return value
+
+    model_config = {"extra": "forbid"}
+
+
 # ---------------------------------------------------------
 # Health check
 # ---------------------------------------------------------
@@ -41,6 +93,66 @@ def root():
         "service": "Health Budget Prediction API",
         "model": "Linear Regression"
     }
+
+
+@app.get("/health")
+def health():
+    return {"status": "healthy", "service": "AI Sarthi API"}
+
+
+@app.get("/api/rag/health")
+def rag_health():
+    return RAGService().health()
+
+
+@app.get("/api/documents")
+def indexed_documents():
+    return {"documents": RAGService().documents()}
+
+
+@app.post("/api/chat")
+def chat(request: ChatRequest):
+    try:
+        result = RAGService().answer(request.question)
+    except OllamaError as exc:
+        raise HTTPException(status_code=503, detail=str(exc)) from exc
+    except ModelUnavailable as exc:
+        raise HTTPException(status_code=503, detail=str(exc)) from exc
+    except RAGError as exc:
+        raise HTTPException(status_code=503, detail=str(exc)) from exc
+    except StructuredDataError as exc:
+        raise HTTPException(status_code=503, detail=str(exc)) from exc
+    return {
+        **result,
+        "session_id": request.session_id or str(uuid.uuid4()),
+    }
+
+
+@app.get("/api/recommend/options")
+def recommendation_options():
+    try:
+        return RecommendationService().options()
+    except StructuredDataError as exc:
+        raise HTTPException(status_code=503, detail=str(exc)) from exc
+
+
+@app.post("/api/recommend")
+def recommend(request: RecommendationRequest):
+    service = RecommendationService()
+    try:
+        options = service.options()
+        if request.state not in options["state_years"] or request.year not in options["state_years"][request.state]:
+            raise HTTPException(
+                status_code=422,
+                detail=f"No matching budget and infrastructure data is available for {request.state} in {request.year}.",
+            )
+        return service.generate(request.state, request.year, request.priority)
+    except OllamaError as exc:
+        raise HTTPException(status_code=503, detail=str(exc)) from exc
+    except StructuredDataError as exc:
+        raise HTTPException(status_code=503, detail=str(exc)) from exc
+    except ValueError as exc:
+        raise HTTPException(status_code=502, detail=str(exc)) from exc
 
 
 # ---------------------------------------------------------

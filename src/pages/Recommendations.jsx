@@ -1,31 +1,56 @@
-import { useState } from 'react';
+import { useEffect, useState } from 'react';
 import { Download, RefreshCw, FileSearch, Sparkles } from 'lucide-react';
 import StateSelector from '../components/StateSelector';
 import Select from '../components/Select';
 import PageHeader from '../components/PageHeader';
 import LoadingSpinner from '../components/LoadingSpinner';
-import { generateRecommendation } from '../services/recommendationService';
-import { getStateData, utilizationPercent, STATE_NAMES, FINANCIAL_YEARS } from '../data/mockData';
+import { generateRecommendation, getRecommendationOptions } from '../services/recommendationService';
 
-const inr = (v) => `₹${v.toLocaleString('en-IN')} Cr`;
+const formatValue = (value) => value == null
+  ? 'Not reported'
+  : Number(value).toLocaleString('en-IN', { maximumFractionDigits: 2 });
 const PRIORITIES = ['Primary Healthcare', 'Infrastructure', 'Manpower & Training', 'Disease Prevention', 'Maternal & Child Health'];
 
 export default function Recommendations() {
-  const [state, setState] = useState(STATE_NAMES[0]);
-  const [year, setYear] = useState(FINANCIAL_YEARS[3]);
+  const [state, setState] = useState('');
+  const [year, setYear] = useState('');
   const [priority, setPriority] = useState(PRIORITIES[0]);
+  const [options, setOptions] = useState({ states: [], state_years: {}, sources: [] });
+  const [optionsLoading, setOptionsLoading] = useState(true);
+  const [optionsError, setOptionsError] = useState('');
   const [loading, setLoading] = useState(false);
   const [result, setResult] = useState(null);
+  const [recommendationError, setRecommendationError] = useState('');
   const [showEvidence, setShowEvidence] = useState(true);
 
-  const stateData = getStateData(state);
+  useEffect(() => {
+    getRecommendationOptions()
+      .then((available) => {
+        setOptions(available);
+        const firstState = available.states[0] ?? '';
+        const years = available.state_years[firstState] ?? [];
+        setState(firstState);
+        setYear(years[years.length - 1] ?? '');
+      })
+      .catch((error) => setOptionsError(error.message))
+      .finally(() => setOptionsLoading(false));
+  }, []);
+
+  const availableYears = options.state_years[state] ?? [];
 
   const run = async () => {
+    if (!state || !year || loading) return;
     setLoading(true);
     setResult(null);
-    const res = await generateRecommendation({ state, year, priority, allocated: stateData?.allocated, utilized: stateData?.utilized });
-    setResult(res);
-    setLoading(false);
+    setRecommendationError('');
+    try {
+      const res = await generateRecommendation({ state, year, priority });
+      setResult(res);
+    } catch (error) {
+      setRecommendationError(error.message);
+    } finally {
+      setLoading(false);
+    }
   };
 
   const section = (title, children) => (
@@ -39,7 +64,7 @@ export default function Recommendations() {
     <div className="space-y-6">
       <PageHeader
         title="AI Budget Recommendations"
-        description="Evidence-grounded allocation and planning guidance synthesized from official MoHFW documents and historical spending."
+        description="Local decision-support guidance generated from matching NHM budget and healthcare infrastructure records."
         breadcrumb="AI & Intelligence / Recommendations"
       />
 
@@ -56,31 +81,38 @@ export default function Recommendations() {
       {/* Input Parameters Surface */}
       <div className="rounded-2xl border border-slate-200/90 bg-white p-6 shadow-card">
         <div className="grid grid-cols-1 gap-4 sm:grid-cols-2 lg:grid-cols-4">
-          <StateSelector value={state} onChange={setState} options={STATE_NAMES} />
-          <Select label="Financial Year" value={year} onChange={setYear} options={FINANCIAL_YEARS} />
+          <StateSelector
+            value={state}
+            onChange={(nextState) => {
+              setState(nextState);
+              const years = options.state_years[nextState] ?? [];
+              setYear(years[years.length - 1] ?? '');
+            }}
+            options={options.states}
+          />
+          <Select label="Financial Year" value={year} onChange={setYear} options={availableYears} />
           <Select label="Healthcare Priority" value={priority} onChange={setPriority} options={PRIORITIES} />
-          {stateData && (
-            <div className="flex flex-col justify-center rounded-xl bg-slate-50 p-3 border border-slate-100 text-xs">
-              <span className="text-slate-400 font-semibold uppercase text-[10px]">State Baseline</span>
-              <div className="mt-1 flex items-center justify-between">
-                <span>Sanctioned:</span>
-                <strong className="text-ink">{inr(stateData.allocated)}</strong>
-              </div>
-              <div className="flex items-center justify-between">
-                <span>Utilization:</span>
-                <strong className="text-secondary">{utilizationPercent(stateData)}%</strong>
-              </div>
-            </div>
-          )}
+          <div className="flex flex-col justify-center rounded-xl bg-slate-50 p-3 border border-slate-100 text-xs">
+            <span className="text-slate-400 font-semibold uppercase text-[10px]">Evidence Coverage</span>
+            <span className="mt-1 text-slate-600">
+              {optionsLoading ? 'Loading project datasets...' : options.sources.map((source) => source.filename).join(' · ')}
+            </span>
+          </div>
         </div>
+
+        {optionsError && (
+          <p role="alert" className="mt-4 rounded-lg border border-rose-200 bg-rose-50 p-3 text-xs text-rose-800">
+            Could not load recommendation data: {optionsError}
+          </p>
+        )}
 
         <div className="mt-5 pt-4 border-t border-slate-100 flex items-center justify-between">
           <p className="text-xs text-slate-500">
-            Click generate to synthesize optimal allocation focus based on {state}'s health profile.
+            Guidance uses matching state/year NHM financial and healthcare infrastructure records. No demonstration figures are used.
           </p>
           <button
             onClick={run}
-            disabled={loading}
+            disabled={loading || optionsLoading || !state || !year}
             className="inline-flex items-center gap-2 rounded-xl bg-primary px-6 py-2.5 text-xs sm:text-sm font-semibold text-white shadow-card hover:bg-primaryLight hover:shadow-cardHover transition-all disabled:opacity-50"
           >
             <Sparkles size={16} />
@@ -89,7 +121,12 @@ export default function Recommendations() {
         </div>
       </div>
 
-      {loading && <LoadingSpinner label="Evaluating state parameters against MoHFW guidelines..." />}
+      {loading && <LoadingSpinner label="Generating guidance from matched budget and infrastructure evidence..." />}
+      {recommendationError && (
+        <p role="alert" className="rounded-xl border border-rose-200 bg-rose-50 p-4 text-sm text-rose-800">
+          Recommendation unavailable: {recommendationError}
+        </p>
+      )}
 
       {result && !loading && (
         <div className="space-y-6 rounded-2xl border border-slate-200/90 bg-white p-6 sm:p-8 shadow-card">
@@ -111,20 +148,32 @@ export default function Recommendations() {
 
             <span
               className={`inline-flex items-center gap-1.5 rounded-full px-2.5 py-0.5 text-xs font-medium ring-1 ring-inset ${
-                result.mode === 'api'
+                result.mode === 'local-ollama'
                   ? 'bg-emerald-50 text-emerald-700 ring-emerald-600/20'
                   : 'bg-amber-50 text-amber-800 ring-amber-600/20'
               }`}
             >
-              <span className={`h-1.5 w-1.5 rounded-full ${result.mode === 'api' ? 'bg-emerald-500' : 'bg-amber-500'}`} />
-              {result.mode === 'api' ? 'Live Recommendation Engine' : 'Demonstration Mode'}
+              <span className={`h-1.5 w-1.5 rounded-full ${result.mode === 'local-ollama' ? 'bg-emerald-500' : 'bg-amber-500'}`} />
+              Local Ollama · Dataset grounded
             </span>
           </div>
 
-          {result.note && (
-            <p className="rounded-lg bg-amber-50 p-3 text-xs text-amber-800 border border-amber-200/60 leading-relaxed">
-              {result.note}
-            </p>
+          {result.facts?.length > 0 && section(
+            'Verified Data & Calculations',
+            <div className="space-y-2">
+              {result.facts.map((fact, index) => (
+                <p key={`${fact.metric}-${index}`} className="text-xs text-slate-700">
+                  <strong>{fact.metric}:</strong> {formatValue(fact.value)} {fact.unit}
+                  {' '}· Source: {fact.source_file} · {state}, {year}
+                </p>
+              ))}
+              {result.calculations?.map((calculation, index) => (
+                <p key={`${calculation.metric}-${index}`} className="text-xs text-slate-700">
+                  <strong>{calculation.metric}:</strong> {formatValue(calculation.value)}%
+                  {' '}({calculation.formula}; {calculation.limitation}) · Source: {calculation.source_file}
+                </p>
+              ))}
+            </div>
           )}
 
           {/* 1. Executive Summary */}
@@ -154,24 +203,9 @@ export default function Recommendations() {
           {section(
             'Suggested Allocation Focus',
             <div className="space-y-3.5">
-              <div className="grid grid-cols-1 gap-3 sm:grid-cols-2">
-                {result.suggestedAllocationFocus.map((a) => (
-                  <div key={a.category} className="rounded-xl border border-slate-100 bg-slate-50/60 p-3.5">
-                    <div className="flex items-center justify-between text-xs mb-1.5">
-                      <span className="font-semibold text-slate-700">{a.category}</span>
-                      <strong className="text-secondary">{a.percentage}%</strong>
-                    </div>
-                    <div className="h-2 w-full overflow-hidden rounded-full bg-slate-200">
-                      <div
-                        className="h-full rounded-full bg-secondary transition-all duration-500"
-                        style={{ width: `${a.percentage}%` }}
-                      />
-                    </div>
-                  </div>
-                ))}
-              </div>
-              <p className="text-[11px] font-medium text-slate-400 text-right">
-                Total Share: {result.suggestedAllocationFocus.reduce((s, a) => s + a.percentage, 0)}% (reallocation normalization)
+              <p className="text-xs leading-relaxed text-slate-600">
+                No allocation percentages are proposed: the available datasets do not contain a verified sector-level
+                sanctioned-budget denominator for this state and year.
               </p>
             </div>
           )}
@@ -187,17 +221,17 @@ export default function Recommendations() {
           {/* 5. Document Citations & Evidence */}
           {showEvidence &&
             section(
-              'Evidence & Grounding from Government Documents',
+              'Evidence & Grounding from Project Datasets',
               <div className="space-y-2.5">
-                {result.evidenceFromDocuments.map((e, i) => (
-                  <div key={i} className="rounded-xl border border-slate-200 bg-white p-3.5 shadow-xs">
-                    <div className="flex items-center justify-between text-xs mb-1">
-                      <span className="font-bold text-primary">{e.document}</span>
+                {result.dataSources.map((source, index) => (
+                  <div key={`${source.filename}-${index}`} className="rounded-xl border border-slate-200 bg-white p-3.5 shadow-xs">
+                    <div className="flex items-center justify-between gap-2 text-xs">
+                      <span className="font-bold text-primary">{source.dataset}</span>
                       <span className="rounded bg-slate-100 px-2 py-0.5 text-[10px] font-semibold text-slate-600">
-                        {e.section}
+                        {source.year}
                       </span>
                     </div>
-                    <p className="text-xs italic text-slate-500 leading-relaxed">"{e.snippet}"</p>
+                    <p className="mt-1 text-xs text-slate-500">Source file: {source.filename}</p>
                   </div>
                 ))}
               </div>

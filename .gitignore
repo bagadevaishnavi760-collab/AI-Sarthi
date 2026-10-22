@@ -8,6 +8,7 @@ pnpm-debug.log*
 lerna-debug.log*
 
 node_modules
+.venv/
 dist
 dist-ssr
 *.local
@@ -27,3 +28,6 @@ dist-ssr
 __pycache__/
 *.pyc
 .env
+
+# Local documents, model indexes, and generated RAG state
+data/rag/
